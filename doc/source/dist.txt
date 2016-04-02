@@ -1,0 +1,7 @@
+dist module
+***********
+
+.. automodule :: holtz.gal.dist
+   :members:
+   :member-order: bysource
+

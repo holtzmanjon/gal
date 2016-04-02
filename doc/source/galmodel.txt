@@ -1,0 +1,7 @@
+galmodel module
+***********
+
+.. automodule :: holtz.gal.galmodel
+   :members:
+   :member-order: bysource
+

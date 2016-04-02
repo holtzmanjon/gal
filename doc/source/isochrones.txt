@@ -1,0 +1,7 @@
+isochrones module
+***********
+
+.. automodule :: holtz.gal.isochrones
+   :members:
+   :member-order: bysource
+

@@ -1,0 +1,7 @@
+dust module
+***********
+
+.. automodule :: holtz.gal.dust
+   :members:
+   :member-order: bysource
+
