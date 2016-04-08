@@ -3,6 +3,8 @@ import h5py
 import numpy as np
 
 def setup():
+    global pix_info, best_fit
+
     f = h5py.File('dust-map-3d.h5', 'r')
     pix_info = f['/pixel_info'][:]
     best_fit = f['/best_fit'][:]

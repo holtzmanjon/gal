@@ -213,7 +213,7 @@ def radius(logl,logte) :
     lum = 10.**logl * astropy.units.Lsun * astropy.constants.L_sun.cgs
     return np.sqrt(lum / (4.*math.pi*astropy.constants.sigma_sb.cgs*teff**4.))
 
-def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.4,-6.],xmax=[4.5,5.],nbins=[200,200],norm=False,verbose=0) :
+def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.4,-6.],xmax=[4.5,5.],nbins=[200,200],norm=False,verbose=0,isoadj=False) :
     """
     Routine to make a Hess diagram of a particular age from a file
     """
@@ -230,6 +230,8 @@ def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.
 
     # if isochrones are logarithmically spaced, convert for constant SFR
     iso['intimf'] *= 10**(iso['age']-9)
+    if isoadj :
+        iso['teff'] -= iso['feh']*150.
 
     # initialize Hess diagram and set bin sizes given limits and nbins
     hess = np.zeros(nbins[::-1],dtype=np.float32)
