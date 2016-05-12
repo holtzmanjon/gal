@@ -7,15 +7,18 @@ import sys
 import subprocess
 import copy
 from sdss.apogee import apload
+from sdss.apogee import apselect
 from astropy.io import fits
+from astropy.io import ascii
 from astropy.table import Table
 from holtz.gal import isochrones
 from holtz.gal import galmodel
 from holtz.gal import dust 
 from holtz.tools import plots
 from holtz.tools import struct
+from holtz.tools import match
 
-def getgrid(doage=None,clobber=False,isoadj=False):
+def getgrid(doage=None,clobber=False,isoadj=False,filt=['h'],prefix=None):
     """ 
     Initialize 4D (Teff, logg, [Fe/H], M_H) or 5D (with doage=True) isochrone grid 
   
@@ -23,7 +26,7 @@ def getgrid(doage=None,clobber=False,isoadj=False):
 
     Keyword args:
 
-    Returns:
+    Returns: nothing, but sets global variables: teff, logg, feh, mh, grid, dteff, dlogg, dfeh, age, dage
     """
 
     global teff, logg, feh, mh, grid, dteff, dlogg, dfeh, age, dage
@@ -35,14 +38,13 @@ def getgrid(doage=None,clobber=False,isoadj=False):
     logg=np.arange(-1.,5.0,dlogg)
     feh=np.arange(-2.1,0.6,dfeh)
     #feh=np.arange(-0.2,0.2,dfeh)
-    filt=['j','h','k']
-    mh=np.arange(-7.,3.,0.1)
+    mh=np.arange(-7.,7.,0.1)
     if doage is None :
         vals=['teff','logg','feh']
         vmin=[teff[0],logg[0],feh[0],mh[0]]
         nbin=[teff.shape[0], logg.shape[0], feh.shape[0], mh.shape[0]]
         vmax=[teff[nbin[0]-1], logg[nbin[1]-1], feh[nbin[2]-1], mh[nbin[3]-1]]
-        file = 'grid_jhk'
+        file = 'grid_'
     else :
         dage=0.05
         age=np.arange(8.,10.15,dage)
@@ -50,7 +52,7 @@ def getgrid(doage=None,clobber=False,isoadj=False):
         vmin=[teff[0],logg[0],feh[0],age[0],mh[0]]
         nbin=[teff.shape[0], logg.shape[0], feh.shape[0], age.shape[0], mh.shape[0]]
         vmax=[teff[nbin[0]-1], logg[nbin[1]-1], feh[nbin[2]-1], age[nbin[3]-1], mh[nbin[4]-1]]
-        file = 'gridage_jhk'
+        file = 'gridage_'
 
     files=(['zm21.dat','zm20.dat','zm19.dat','zm18.dat','zm17.dat','zm16.dat','zm15.dat','zm14.dat','zm13.dat','zm12.dat','zm11.dat','zm10.dat',
        'zm09.dat','zm08.dat','zm07.dat','zm06.dat','zm05.dat','zm04.dat','zm03.dat','zm02.dat','zm01.dat',
@@ -61,6 +63,12 @@ def getgrid(doage=None,clobber=False,isoadj=False):
     #agerange=[9.39,9.41]
     #file='gridtest.fits'
 
+    # output file name
+    if prefix is not None:
+        file = prefix+file
+    for f in filt :
+        file=file+f 
+
     if os.path.exists(file+'.fits') and not clobber:
         grid = fits.open(file+'.fits')
     else :
@@ -70,20 +78,32 @@ def getgrid(doage=None,clobber=False,isoadj=False):
             temp=copy.copy(vals)
             temp.append(f)
             grid=isochrones.mkhess(agerange=agerange,files=files,vals=temp,xmin=vmin,xmax=vmax,nbins=nbin,isoadj=isoadj)
-            hdulist.append(fits.ImageHDU(grid))
+            #hdulist.append(fits.ImageHDU(grid))
+            hdulist.append(grid)
        
         grid.writeto(file+'.fits',clobber=True)
    
 
-def getdist(obste,obslogg,obsfeh,obsmag,ext=0.,glon=None,glat=None,errte=50,errlogg=0.1,errfeh=0.1,mlim=12.2,obsage=None,errage=10.,plot=None,disp=None):
+def getdist(obste,obslogg,obsfeh,obsmag,ext=[0.],glon=None,glat=None,errte=50,errlogg=0.1,errfeh=0.1,mlim=12.2,obsage=None,errage=10.,plot=None,disp=None,verbose=False):
     """ 
     Return distance estimates for input observed parameters, errors, limiting mag for single object
   
     Args:
+       obste (float) : effective temperature
+       obslogg (float) : surface gravity
+       obsfeh (float) : metallicity
+       obsmag (list[float]) : observed magnitudes
 
     Keyword args:
+       errte (float) :  uncertainty for Teff (default=50)
+       errlogg (float) :  uncertainty for logg (default=0.1)
+       errfeh (float) :  uncertainty for metallicity (default=0.1)
+       mlim (float]) : limiting magnitude (for distance prior)
+       ext (list[float]) : extinction(s)   (for distance prior)
+       glon : Galactic longitude   (for distance prior)
+       glat : Galactic latitude   (for distance prior)
 
-    Returns:
+    Returns: structured array with distance output
     """
 
     if len(obsmag) != len(ext) or len(grid)-1 != len(obsmag) :
@@ -92,12 +112,12 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=0.,glon=None,glat=None,errte=50,errl
 
     # get probability of observed Teff, and limits over which to marginalize
     probte=np.exp(-0.5*(obste-teff)**2/errte**2)
-    itmin=max(0,np.floor((obste-3*errte-teff[0])/dteff).astype('int'))
-    itmax=min(len(teff)-1,np.ceil((obste+3*errte-teff[0])/dteff).astype('int'))
+    itmin=min(len(teff)-1,max(0,np.floor((obste-3*errte-teff[0])/dteff).astype('int')))
+    itmax=max(0,min(len(teff)-1,np.ceil((obste+3*errte-teff[0])/dteff).astype('int')))
 
     # get probability of observed logg, and limits over which to marginalize
     problogg=np.exp(-0.5*(obslogg-logg)**2/errlogg**2)
-    iloggmin=max(0,np.floor((obslogg-3*errlogg-logg[0])/dlogg).astype('int'))
+    iloggmin=min(len(logg)-1,max(0,np.floor((obslogg-3*errlogg-logg[0])/dlogg).astype('int')))
     iloggmax=min(len(logg)-1,np.ceil((obslogg+3*errlogg-logg[0])/dlogg).astype('int'))
 
     # get probability of observed [Fe/H], and limits over which to marginalize
@@ -106,6 +126,9 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=0.,glon=None,glat=None,errte=50,errl
     ifehmax=max(0,min(len(feh)-1,np.ceil((obsfeh+3*errfeh-feh[0])/dfeh).astype('int')))
 
     # get probability of age, and limits over which to marginalize
+    if verbose: 
+        print obste, obslogg, obsfeh
+        print ifehmin, ifehmax, iloggmin, iloggmax,itmin, itmax
     if obsage is not None :
         probage=np.exp(-0.5*(obsage-age)**2/errage**2)
         iagemin=np.max([0,np.floor((obsage-3*errage-age[0])/dage).astype('int')])
@@ -114,7 +137,10 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=0.,glon=None,glat=None,errte=50,errl
     # get the probability grid 
     #obs=grid.data*0.
     if obsage is None :
-        obs=np.zeros([len(grid)-1,len(mh),ifehmax-ifehmin+1,iloggmax-iloggmin+1,itmax-itmin+1])
+        try:
+          obs=np.zeros([len(grid)-1,len(mh),ifehmax-ifehmin+1,iloggmax-iloggmin+1,itmax-itmin+1])
+        except:
+          pdb.set_trace()
     else :
         obs=np.zeros([len(grid)-1,len(mh),iagemax-iagemin+1,ifehmax-ifehmin+1,iloggmax-iloggmin+1,itmax-itmin+1])
 
@@ -133,9 +159,10 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=0.,glon=None,glat=None,errte=50,errl
                 else :
                     for iage in range(iagemin,iagemax) :
                         p2 = prob*probage[iage]
-                        #print iage, iagemin, iagemax, obsage, errage, ifeh,ig,it
-                        #print obs.shape, grid.data.shape
-                        for igrid in range(len(grid)) :
+                        #for imh in range(len(mh)-1) :
+                        for igrid in range(len(grid)-1) :
+                            #print iage, iagemin, iagemax, obsage, errage, ifeh,ig,it
+                            #print obs.shape, grid[igrid+1].data.shape
                             obs[igrid,:,iage-iagemin,ifeh-ifehmin,ig-iloggmin,it-itmin] = grid[igrid+1].data[:,iage,ifeh,ig,it]*p2
                         #for imh in range(len(mh)-1) :
                         #    obs[imh,iage,ifeh,ig,it] = grid.data[imh,iage,ifeh,ig,it]*p2
@@ -144,22 +171,28 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=0.,glon=None,glat=None,errte=50,errl
     diso=[]
     diso_dist=[]
     diso_pdf=[]
+    diso_pdfmax=[]
     for igrid in range(len(obsmag)) :
         if obsage is None :
             probmh=obs[igrid,:,:,:,:].sum(axis=(1,2,3))
         else :
             probmh=obs[igrid,:,:,:,:,:].sum(axis=(1,2,3,4))
         tot=probmh.sum()
-        probmh/=probmh.sum()
 
         # get distances corresponding to M_H
         distmod = obsmag[igrid]-mh-ext[igrid]
         dist=10.**((distmod+5)/5.)
 
         # get max, median, mean distance from M_H PDF, no prior
-        diso.append([dist[probmh.argmax()],median_index(dist,probmh)[1],(probmh*dist).sum()/probmh.sum()])
         diso_dist.append(dist)
         diso_pdf.append(copy.deepcopy(probmh))
+        if tot > 0 :
+            probmh/=tot
+            diso.append([dist[probmh.argmax()],median_index(dist,probmh)[1],(probmh*dist).sum()/probmh.sum()])
+            diso_pdfmax.append(probmh[probmh.argmax()]*tot)
+        else :
+            diso.append([np.nan,np.nan,np.nan])
+            diso_pdfmax.append(0.)
 
         if plot is not None :
             print 'M_H: ', mh[probmh.argmax()],median_index(mh,probmh)[1],(probmh*mh).sum()/probmh.sum()
@@ -184,17 +217,24 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=0.,glon=None,glat=None,errte=50,errl
             intfunc = interpolate.interp1d(extinct['distmod'],extinct['ah'],kind='linear',bounds_error=False)
             extmap = intfunc(distmod)
             # replace nans
-            if np.nanargmax(extmap) > 0 :
-                extmap[0:np.nanargmax(extmap)] = np.nanmax(extmap)
-            if np.nanargmin(extmap) < len(extmap) :
-                extmap[np.nanargmin(extmap):len(extmap)] = 0.
+            try:
+                if np.nanargmax(extmap) > 0 :
+                    extmap[0:np.nanargmax(extmap)] = np.nanmax(extmap)
+                if np.nanargmin(extmap) < len(extmap) :
+                    extmap[np.nanargmin(extmap):len(extmap)] = 0.
+            except:
+                extmap[:] = 0.
 
             # get "extinction" distance
             i=0
-            while extmap[i] > ext[1]  and i < len(extmap)-1:
+            try:
+                hext=ext[1]
+            except:
+                hext=ext[0]
+            while extmap[i] > hext  and i < len(extmap)-1:
                 i+=1
             if i < len(extmap) :
-                dext = distmod[i-1]+(distmod[i]-distmod[i-1])*(ext[1]-extmap[i-1])/(extmap[i]-extmap[i-1])
+                dext = distmod[i-1]+(distmod[i]-distmod[i-1])*(hext-extmap[i-1])/(extmap[i]-extmap[i-1])
             else :
                 dext = -1.
 
@@ -204,36 +244,47 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=0.,glon=None,glat=None,errte=50,errl
                     select(mh,thinlf,distmod,mlim,extmap=extmap)*p[0]+
                     select(mh,thicklf,distmod,mlim,extmap=extmap)*p[1])
             probmh*=dprior
-            probmh/=probmh.sum()
-
-            # get max, median, mean distance from PDF with prior
-            diso_gal = dist[probmh.argmax()],median_index(dist,probmh)[1],(probmh*dist).sum()/probmh.sum()
+            tot = probmh.sum()
             diso_gal_dist = dist
             diso_gal_pdf = probmh
+            if tot > 0 :
+                probmh/=tot
+                 # get max, median, mean distance from PDF with prior
+                diso_gal = dist[probmh.argmax()],median_index(dist,probmh)[1],(probmh*dist).sum()/probmh.sum()
+            else :
+                diso_gal = [np.nan,np.nan,np.nan]
 
     # output
     out = np.recarray(1,dtype=[
-                       ('diso','3f4',(3)),
-                       ('diso_dist','100f4',(3)),
-                       ('diso_pdf','100f4',(3)),
+                       ('diso','3f4',(len(obsmag))),
+                       ('diso_dist','140f4',(len(obsmag))),
+                       ('diso_pdf','140f4',(len(obsmag))),
+                       ('diso_pdfmax','f4',(len(obsmag))),
                        ('diso_gal','3f4'),
-                       ('diso_gal_dist','100f4'),
-                       ('diso_gal_pdf','100f4'),
+                       ('diso_gal_dist','140f4'),
+                       ('diso_gal_pdf','140f4'),
                        ('dext','f4'),
                        ])
     out.diso = diso
     out.diso_dist = diso_dist
     out.diso_pdf = diso_pdf
+    out.diso_pdfmax = diso_pdfmax
     out.diso_gal = diso_gal
     out.diso_gal_dist = diso_gal_dist
     out.diso_gal_pdf = diso_gal_pdf
+    out.dext = dext
     if disp is not None: 
-        it,ig,ife,ia = index(obste,obslogg,obsfeh,0.)
-        disp.tv(grid[2].data[:,ife-1:ife+1,:,:].sum(axis=0).sum(axis=0)*1000.,min=0,max=10.)
+        it,ig,ife,ia = index(obste,obslogg,obsfeh,obsage)
+        if obsage is None:
+            disp.tv(grid[1].data[:,ife,:,:].sum(axis=0)*1000.,min=0,max=10.)
+            print mh[grid[1].data[:,ife,ig,it].argmax()]
+            oy,ox = np.unravel_index(obs[0,:,:,:,:].sum(axis=0).sum(axis=0).argmax(),obs[0,:,:,:,:].sum(axis=0).sum(axis=0).shape)
+        else :
+            disp.tv(grid[1].data[:,ia,ife,:,:].sum(axis=0)*1000.,min=0,max=10.)
+            print mh[grid[1].data[:,ia,ife,ig,it].argmax()]
+            oy,ox = np.unravel_index(obs[0,:,:,:,:,:].sum(axis=0).sum(axis=0).sum(axis=0).argmax(),obs[0,:,:,:,:,:].sum(axis=0).sum(axis=0).sum(axis=0).shape)
         circ=plt.Circle((it,ig),radius=2,fill=False,color='g')
         disp.ax.add_patch(circ)
-        print mh[grid[2].data[:,ife,ig,it].argmax()]
-        oy,ox = np.unravel_index(obs[1,:,:,:,:].sum(axis=1).sum(axis=1).argmax(),obs[1,:,:,:,:].sum(axis=1).sum(axis=1).shape)
         ocirc=plt.Circle((ox+itmin,oy+iloggmin),radius=2,fill=False,color='r')
         disp.ax.add_patch(ocirc)
         pdb.set_trace()
@@ -305,7 +356,7 @@ def lfs(file='priorlfs.fits',clobber=False) :
         out.writeto(file,clobber=True)
   
 
-def init(doage=None,isoadj=False,clobber=False) :
+def init(doage=None,isoadj=False,clobber=False,prefix=None) :
     """ 
     Initialize isochrone grid and luminosity functions for spatial priors 
   
@@ -316,18 +367,20 @@ def init(doage=None,isoadj=False,clobber=False) :
     Returns:
     """
     print 'Initilizing grid...'
-    getgrid(doage=doage,isoadj=isoadj,clobber=clobber)
+    getgrid(doage=doage,isoadj=isoadj,clobber=clobber,prefix=prefix)
     print 'Initilizing LFs for priors...'
     lfs()
+    dust.setup()
 
 
-def isotest(errte=50,errlogg=0.1,errfeh=0.05,mlim=12.2,nskip=10,errage=None,dteff=0.) :
+def isotest(errte=50,errlogg=0.1,errfeh=0.05,mlim=12.2,nskip=10,errage=None,dteff=0.,dwerrlogg=0.1) :
     """ 
-    Test using input isochrone data
+    Test using input isochrone data: runs for full grid of isochrones!
   
     Args:
 
     Keyword args:
+         nskip (int) : use every nskip'th line in isochrone data
 
     Returns:
     """
@@ -347,16 +400,28 @@ def isotest(errte=50,errlogg=0.1,errfeh=0.05,mlim=12.2,nskip=10,errage=None,dtef
                        ('diso','3f4'),
                        ])
         for i in range(len(a)) :
-            if (a['logg'][i] < 4)  & (a['teff'][i] < 5800) & (i%nskip == 0) :
+            #if (a['logg'][i] < 4)  & (a['teff'][i] < 5800) & (i%nskip == 0) :
+            print a['teff'][i],a['logg'][i],feh0,a['age'][i]
+            if (a['teff'][i] < 5800) & (a['h'][i] < 7) & (i%nskip == 0) :
                 # add simulated uncertainties
                 teff = a['teff'][i] + np.random.normal(scale=errte) + dteff
-                logg = a['logg'][i] + np.random.normal(scale=errlogg)
+                if a['logg'][i] < 4 :
+                    logg = a['logg'][i] + np.random.normal(scale=errlogg)
+                else :
+                    logg = a['logg'][i] + np.random.normal(scale=dwerrlogg)
                 feh = feh0 + np.random.normal(scale=errfeh)
                 # get distance
                 if errage is None :
-                    out = getdist(teff,logg,feh,m,errte=errte,errlogg=errlogg,errfeh=errfeh,mlim=12.2)
+                    if a['logg'][i] > 4 :
+                      out = getdist(teff,logg,feh,[m],errte=errte,errlogg=dwerrlogg,errfeh=errfeh,mlim=12.2)
+                    else :
+                      out = getdist(teff,logg,feh,[m],errte=errte,errlogg=errlogg,errfeh=errfeh,mlim=12.2)
                 else :
-                    out = getdist(teff,logg,feh,m,errte=errte,errlogg=errlogg,errfeh=errfeh,mlim=12.2,
+                    if a['logg'][i] > 4 :
+                        out = getdist(teff,logg,feh,[m],errte=errte,errlogg=dwerrlogg,errfeh=errfeh,mlim=12.2,
+                                  errage=errage,obsage=a['age'][i])
+                    else :
+                        out = getdist(teff,logg,feh,[m],errte=errte,errlogg=errlogg,errfeh=errfeh,mlim=12.2,
                                   errage=errage,obsage=a['age'][i])
                 # true distance computed for input apparent magnitude
                 true = 10.**((m-a['h'][i]+5)/5.)
@@ -388,21 +453,27 @@ def plottest(all,file='test',index=2) :
     """   
     fig=plt.figure()
     ax=fig.add_subplot(2,3,1)
-    plots.plotc(ax,all['teff'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10])
+    plots.plotc(ax,all['teff'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10],yr=[-1,1],xt='Teff')
+    ax.set_xticks(np.arange(3000,6000,1000))
     ax=fig.add_subplot(2,3,2)
-    plots.plotc(ax,all['feh'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10])
+    plots.plotc(ax,all['feh'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10],yr=[-1,1],xt='[M/H]')
+    ax.set_xticks(np.arange(-2.5,1.0,1.0))
     ax=fig.add_subplot(2,3,3)
-    plots.plotc(ax,all['logg'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10])
+    plots.plotc(ax,all['logg'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10],yr=[-1,1],xt='log g')
     ax=fig.add_subplot(2,3,4)
-    plots.plotc(ax,all['h'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10])
+    plots.plotc(ax,all['h'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10],yr=[-1,1],xt='H')
     ax=fig.add_subplot(2,3,5)
-    plots.plotc(ax,all['age'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10])
+    plots.plotc(ax,all['age'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10],yr=[-1,1],xt='Age')
     ax=fig.add_subplot(2,3,6)
-    plots.plotc(ax,all['dist'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10])
+    ax.hist((all['diso'][:,index]-all['dist'])/all['dist'],bins=np.arange(-1.,1.,0.05))
+    ax.set_xlabel('Fractional distance error')
+    #plots.plotc(ax,all['dist'],(all['diso'][:,index]-all['dist'])/all['dist'],all['age'],zr=[9,10],yr=[-1,1],xt='dist')
+    #ax.set_xticks(np.arange(-1000,15000,3000))
     plt.tight_layout()
     plt.savefig(file+'.jpg')
+    plt.close()
   
-def alltest() :
+def alltest(clobber=False) :
     """ 
     Run several test runs with different input parameters
   
@@ -413,27 +484,36 @@ def alltest() :
     Returns:
     """
 
-    init()
+    init(prefix='bigraw')
     # test with typical uncertainties
-    #file = 'test'
-    #all=isotest(errte=50,errlogg=0.1,errfeh=0.05,mlim=12.2) 
-    #all.write(file+'.fits',format='fits',overwrite=True)
-    #plottest(all,file=file)
-    #plottest(all,file=file+'med',index=1)
+    file = 'bigtest'
+    try :
+        all=fits.open(file+'.fits')[1].data
+    except :
+        all=isotest(errte=50,errlogg=0.1,errfeh=0.05,mlim=12.2,dwerrlogg=0.75)
+        all.write(file+'.fits',format='fits',overwrite=True)
+    plottest(all,file=file)
+    plottest(all,file=file+'med',index=1)
 
     # test with typical uncertainties, offset temperature
-    file = 'testoff'
-    all=isotest(errte=50,errlogg=0.1,errfeh=0.05,mlim=12.2,dteff=200) 
-    all.write(file+'.fits',format='fits',overwrite=True)
+    file = 'bigtestoff'
+    try :
+        all=fits.open(file+'.fits')[1].data
+    except :
+        all=isotest(errte=50,errlogg=0.1,errfeh=0.05,mlim=12.2,dteff=200,dwerrlogg=0.75)
+        all.write(file+'.fits',format='fits',overwrite=True)
     plottest(all,file=file)
     plottest(all,file=file+'med',index=1)
 
     # test with very small uncertainties
-    #file = 'test0'
-    #all=isotest(errte=5,errlogg=0.01,errfeh=0.005,mlim=12.2)
-    #all.write(file+'.fits',format='fits',overwrite=True)
-    #plottest(all,file=file)
-    #plottest(all,file=file+'med',index=1)
+    file = 'bigtest0'
+    try :
+        all=fits.open(file+'.fits')[1].data
+    except :
+        all=isotest(errte=5,errlogg=0.01,errfeh=0.005,mlim=12.,dwerrlogg=0.01)
+        all.write(file+'.fits',format='fits',overwrite=True)
+    plottest(all,file=file)
+    plottest(all,file=file+'med',index=1)
 
     # test using age dimension
     #file = 'testage'
@@ -454,35 +534,11 @@ def test(teff=4500.,logg=2.5,feh=0.,mag=10.,glon=10,glat=10,errte=50,errlogg=0.0
     Returns:
     """
     init()
-    out=getdist(teff,logg,feh,mag,glon=glon,glat=glat,errte=errte,errlogg=errlogg,errfeh=errfeh)
+    out=getdist(teff,logg,feh,[mag],glon=glon,glat=glat,errte=errte,errlogg=errlogg,errfeh=errfeh)
     pdb.set_trace()
     return out
 
-def distrec(rec) :
-    """ 
-    get distance for single 'record'
-  
-    Args:
-
-    Keyword args:
-
-    Returns:
-    """
-
-    mlim = getmlim(rec)
-    ext = bestext(rec)
-    try:
-        iso_fe_h = feh_corrected(rec['M_H'],rec['ALPHA_M'])
-    except:
-        iso_fe_h = feh_corrected(rec['PARAM_M_H'],rec['PARAM_ALPHA_M'])
-    print rec['TEFF'],rec['LOGG'],iso_fe_h,rec['H'],rec['GLON'],rec['GLAT'],mlim,ext
-
-    out=getdist(rec['TEFF'],rec['LOGG'],iso_fe_h,rec['H'],glon=rec['GLON'],glat=rec['GLAT'],
-                mlim=mlim, ext=ext,
-                errte=50, errlogg=0.1, errfeh = 0.05)
-    return out
-
-def testobj(data,obj) :
+def distobj(data,obj) :
     """
     Distance run for specified object
   
@@ -492,33 +548,51 @@ def testobj(data,obj) :
 
     Returns:
     """
-    dust.setup()
+    init()
     j=np.where(np.core.defchararray.strip(data['APOGEE_ID']) == obj)[0]
     rec=data[j[0]]
-    objdist(rec)
+    distrec(rec)
 
-def objdist(rec,param='PARAM',disp=None,plot=None) :
+def distrec(rec,param='PARAM',disp=None,plot=None,obsage=None,errage=10,verbose=False) :
     """
     Get distance for single record
   
     Args:
+        rec (structured array) : standard APOGEE record
 
     Keyword args:
+        param (char) : name of parameter array to use (PARAM or FPARAM)
+        disp  : if set, use as display object for image display of data
+        plot  : if set, use as axes object for plot
 
-    Returns:
+    Returns: structured array of output distance information
+ 
     """
 
     # get extinction and limiting mag for this object
     mlim = getmlim(rec)
     ext = bestext(rec)
     # compute distance given parameters within range
-    if rec[param][1] > -1  and rec[param][0] < 5800 and rec[param][0] > 3000 and ext  > -0.1 : 
+    if rec[param][1] > -1  and rec[param][0] < 5800 and rec[param][0] > 3000 and ext[1]  > -0.1 : 
         iso_fe_h = feh_corrected(rec[param][3],rec[param][6])
-        print '  ',rec[param][0],rec[param][1],iso_fe_h,rec['H'],ext,rec['GLON'],rec['GLAT']
-        out=getdist(rec[param][0],rec[param][1],iso_fe_h,[rec['J'],rec['H'],rec['K']],glon=rec['GLON'],glat=rec['GLAT'],
-                    mlim=mlim, ext=ext,
-                    errte=50, errlogg=0.1, errfeh = 0.05, disp=disp, plot=plot)
+        if verbose : print '  ',rec[param][0],rec[param][1],iso_fe_h,rec['H'],ext,rec['GLON'],rec['GLAT']
+        out=getdist(rec[param][0],rec[param][1],iso_fe_h,[rec['H']],glon=rec['GLON'],glat=rec['GLAT'],
+                    mlim=mlim, ext=[ext[1]],
+                    errte=50, errlogg=0.1, errfeh = 0.05, disp=disp, plot=plot, obsage=obsage, errage=errage)
         return out
+    elif rec['FPARAM'][1] > -1  and rec['FPARAM'][0] < 5800 and rec['FPARAM'][0] > 3000 and ext[1]  > -0.1 : 
+        iso_fe_h = feh_corrected(rec['FPARAM'][3],rec['FPARAM'][6])
+        print ' using FPARAM: ',rec['FPARAM'][0],rec['FPARAM'][1],iso_fe_h,rec['H'],ext,rec['GLON'],rec['GLAT']
+        if rec['FPARAM'][1] > 4 :
+           errlogg =0.75
+        else :
+           errlogg =0.1
+        out=getdist(rec['FPARAM'][0],rec['FPARAM'][1],iso_fe_h,[rec['H']],glon=rec['GLON'],glat=rec['GLAT'],
+                    mlim=mlim, ext=[ext[1]],
+                    errte=50, errlogg=errlogg, errfeh = 0.05, disp=disp, plot=plot, obsage=obsage, errage=errage)
+        return out
+    else :
+        return None
 
 def main(file=None,nmax=None,raw=False) :
     """
@@ -530,7 +604,6 @@ def main(file=None,nmax=None,raw=False) :
 
     Returns:
     """
-    dust.setup()
     # read input structure
     if file is None :
         a=apload.allStar()[1].data    
@@ -542,8 +615,8 @@ def main(file=None,nmax=None,raw=False) :
         a=a[0:nmax]
 
     # initialize and do dummy run to get output recarray to append to structure
-    init(isoadj=True)
-    out=getdist(4500.,2.5,0.,10.)
+    init(isoadj=True,prefix='bigadj')
+    out=getdist(4500.,2.5,0.,[10.])
     data=struct.add_cols(a,out)
 
     if raw :
@@ -553,17 +626,9 @@ def main(file=None,nmax=None,raw=False) :
 
     # loop over objects
     for rec in data :
-        # get extinction and limiting mag for this object
-        mlim = getmlim(rec)
-        ext = bestext(rec)
+        out=distrec(rec,param=param,disp=None,plot=None) 
 
-        # compute distance given parameters within range
-        if rec[param][1] > -1  and rec[param][0] < 5800 and rec[param][0] > 3000 and ext  > -0.1 : 
-            iso_fe_h = feh_corrected(rec[param][3],rec[param][6])
-            print '  ',rec[param][0],rec[param][1],iso_fe_h,rec['H'],ext,rec['GLON'],rec['GLAT']
-            out=getdist(rec[param][0],rec[param][1],iso_fe_h,rec['H'],glon=rec['GLON'],glat=rec['GLAT'],
-                        mlim=mlim, ext=ext,
-                        errte=50, errlogg=0.1, errfeh = 0.05)
+        if out is not None:
             for tag in out.dtype.names :
                 rec[tag] = out[tag]
 
@@ -597,7 +662,7 @@ def getmlim(rec) :
     else :
         return 12.2
  
-def bestext(rec) :
+def bestext(rec,verbose=False) :
     """ 
     get "best" H band extinction from targetting info
   
@@ -616,18 +681,18 @@ def bestext(rec) :
         else :
             ak = rec['AK_WISE']
         # at |b|>16, use SFD if it is lower
-        if (abs(rec['GLAT']) > 16) and (0.302*rec['SFD_EBV'] < 1.2*ak) :
+        if (abs(rec['GLAT']) > 16) and ( (0.302*rec['SFD_EBV'] < 1.2*ak) or (ak <0) ):
             ak =  0.302 * rec['SFD_EBV']
         # assume no extinction for hipparcos sample
         if rec['FIELD'].strip() == 'hip' :
             ak = 0.
-        print '  AK: ', rec['AK_TARG_METHOD'], rec['AK_TARG'], rec['AK_WISE'], ak
+        if verbose : print '  AK: ', rec['AK_TARG_METHOD'], rec['AK_TARG'], rec['AK_WISE'], ak
     else :
         # array input/output
         ak=rec['AK_WISE']
         gd=np.where(np.core.defchararray.find(rec['AK_TARG_METHOD'],'IRAC') >= 0)[0]
         ak[gd]=rec['AK_TARG']
-        gd=np.where((abs(rec['GLAT']) > 16) & (0.302*rec['SFD_EBV'] < 1.2*ak))[0]
+        gd=np.where((abs(rec['GLAT']) > 16) & ((0.302*rec['SFD_EBV'] < 1.2*ak) | (ak<0)) )[0]
         ak[gd]=0.302 * rec['SFD_EBV'][gd]
         gd=np.where(np.core.defchararray.strip(rec['FIELD']) == 'hip')[0]
         ak[gd]=0.
@@ -705,7 +770,7 @@ def split(write=True,run=True,n=15) :
             log = open(file+'.log','w')
             subprocess.Popen(["python","/home/holtz/python/holtz/gal/dist.py",file],stdout=log,stderr=subprocess.STDOUT)
 
-def testcat(disp=None,plot=False) :
+def testcat(disp=None,plot=False,bpg=False,ms=False,msbayes=False,index=0) :
     """ 
     Compare distances with catalog distances 
   
@@ -718,21 +783,58 @@ def testcat(disp=None,plot=False) :
 
     from esutil import htm
     # read catalog
+    rc=fits.open('apogee-rc-DR13.fits')[1].data
     cat=fits.open('apogee-distances_DR12_v1.3.fits')
     cat.verify('fix')
     cat=cat[1].data
-    all=fits.open('allStar+.fits')[1].data
+    if bpg :
+        all=fits.open('apogee-BPGdistances_DR13_v2.0.fits')[1].data
+        prefix='bpg'
+    elif ms :
+        msall=ascii.read('MS_Isochrone-Match_DR13-Dist-Cat_simple.csv')
+        all=fits.open('allStar+.fits')[1].data
+        prefix='ms'
+    elif msbayes :
+        msall=ascii.read('MS_Bayesian_DR13-Dist-Cat_simple.csv')
+        all=fits.open('allStar+.fits')[1].data
+        prefix='msbayes'
+    else :
+        all=fits.open('allStar+.fits')[1].data
+        prefix='diso{:1d}'.format(index)
 
     # match objects
     h=htm.HTM()
     maxrad=1./3600.
+    if ms or msbayes:
+        # replace distances in all with MS distances
+        if ms :
+            m1ms,m2ms=match.match(msall['MS_Isochrone-Match_DR13 ID_2MASS'],all['APOGEE_ID'])
+        else :
+            m1ms,m2ms=match.match(msall['MS_Bayesian_DR13 ID_2MASS'],all['APOGEE_ID'])
+        all['diso'][:,0] = -1
+        all['diso'][m2ms,0] = msall['dist_kpc'][m1ms]*1000.
     m1,m2,rad=h.match(all['RA'],all['DEC'],cat['RA'],cat['DEC'],maxrad)
+    m1rc,m2rc,rad=h.match(all['RA'],all['DEC'],rc['RA'],rc['DEC'],maxrad)
+
+    # match clusters
+    clust=apselect.clustdata()
+    mc=np.array([],dtype=int)
+    dc=np.array([])
+    for i in range(len(clust.name)) :
+        print clust[i].name,clust[i].dist
+        j=apselect.clustmember(all,clust[i].name,logg=[-1,5],raw=True)
+        if len(j) > 0 :
+            mc=np.append(mc,j)
+            dc=np.append(dc,np.zeros(len(j))+clust[i].dist*1000)
 
     # make various catalog comparison plots
     if plot :
-        catplot('cat_apokasc',all[m1],1000.*cat['APOKASC_DIST_BAYES'][m2],index=0)
-        catplot('cat_hip',all[m1],1000./(cat['HIP_PLX'][m2]),index=0)
-        catplot('cat_rc',all[m1],1000.*cat['RC_DIST'][m2],index=0)
+        plotcat(prefix+'_apokasc',all[m1],1000.*cat['APOKASC_DIST_BAYES'][m2],index=index)
+        plotcat(prefix+'_hip',all[m1],1000./(cat['HIP_PLX'][m2]),index=index)
+        plotcat(prefix+'_rc',all[m1rc],1000.*rc['RC_DIST'][m2rc],index=index)
+        plotcat(prefix+'_clust',all[mc],dc,index=index)
+        j=apselect.select(all,field='BAADEWIN_001-04')
+        plotcat(prefix+'_bw',all[j],all[j]['RA']*0+8500.)
 
     pdb.set_trace()
     fig=plt.figure()
@@ -754,12 +856,55 @@ def testcat(disp=None,plot=False) :
         ax.plot([x,x],[0,1],color='k')
         if abs(5*np.log10(all[m1[i]]['diso'][0]/(1000./cat['HIP_PLX'][m2[i]]))) > 0.0 :
           if disp is not None :
-            out=objdist(all[m1[i]],plot=ax2,disp=disp)
+            out=distrec(all[m1[i]],plot=ax2,disp=disp)
         plt.figure(fig.number)
         ax.cla()
         ax2.cla()
 
-def catplot(file,all,dist,index=2,inter=False):
+def testclust(disp=None,suffix=None) :
+    a=fits.open('allStar+'+suffix+'.fits')[1].data
+    clust=apselect.clustdata()
+
+    fig=plt.figure()
+    ax1=fig.add_subplot(221)
+    ax2=fig.add_subplot(222)
+    ax3=fig.add_subplot(223)
+    ax4=fig.add_subplot(224)
+    alldata=np.array([])
+    allmh=np.array([])
+    for i in range(len(clust.name)) :
+        print clust[i].name,clust[i].dist
+        j=apselect.clustmember(a,clust[i].name)
+        hdata=a['DISO'][j,1]/(clust[i].dist*1000)
+        alldata=np.append(alldata,hdata)
+        allmh=np.append(allmh,a[j]['M_H'])
+        # individual clust plots? set minimum number of members to plot
+        if len(j) > 3000 :
+          plots.plotc(ax1,a[j]['TEFF'],a['DISO'][j,1],a[j]['M_H'],size=15,zr=[-2,0.5])
+          ax1.plot([0,10000],[clust[i].dist*1000,clust[i].dist*1000])
+          plots.plotc(ax2,a[j]['TEFF'],a[j]['LOGG'],a[j]['M_H'],size=15,zr=[-2,0.5],xr=[5500,3500],yr=[5,0])
+          plots.plotc(ax3,a[j]['J']-a[j]['K'],a[j]['H'],a[j]['M_H'],size=15,zr=[-2,0.5],xr=[0,2],yr=[15,5])
+          ax4.hist(np.log10(hdata[np.where(~np.isnan(hdata) & (hdata>0))]))
+          #for i in range(len(j)) :
+          #  if disp is not None :
+          #    out=distrec(a[j[i]],plot=ax4,disp=disp)
+          #pdb.set_trace()
+          plt.savefig('dist_'+clust[i].name+'.jpg')
+          ax1.cla()
+          ax2.cla()
+          ax3.cla()
+          ax4.cla()
+    plt.close()
+    fig=plt.figure()
+    ax1=fig.add_subplot(211)
+    ax2=fig.add_subplot(212)
+    plots.plotc(ax1,allmh,alldata,allmh,xr=[-2.5,1.0],yr=[0,2.],zr=[-2.5,1.0])
+    hist,bins=np.histogram(alldata,bins=np.arange(0.,2.,0.05))
+    plots.plotl(ax2,bins[0:-1],hist)
+    plt.savefig('dist_all'+suffix+'.jpg')
+       
+    
+def plotcat(file,all,dist,index=2,inter=False):
     """ 
     Plots for catalog comparisons 
   
@@ -769,43 +914,57 @@ def catplot(file,all,dist,index=2,inter=False):
 
     Returns:
     """
-    fig, ax = plt.subplots(2,3)
-    fig.subplots_adjust(wspace=0.)
-    plots.plotc(ax[0,0],all['teff'],(all['diso'][:,index]-dist)/dist,all['logg'],zr=[0,5],xr=[2500,6500],yr=[-1,1],xt='Teff')
-    ax[0,0].set_xticks(np.arange(3000,6000,1000))
-
     try:
         m_h = all['M_H']
     except:
         m_h = all['PARAM_M_H']
-    plots.plotc(ax[0,1],m_h,(all['diso'][:,index]-dist)/dist,all['logg'],zr=[0,5],xr=[-3,1],yr=[-1,1],xt='[M/H]')
-    plt.setp(ax[0,1].get_yticklabels(),visible=False)
-    ax[0,1].set_xticks(np.arange(-2.5,0.5,1.0))
+    z=m_h
+    zr=[-2.,0.5]
+    #ak=bestext(all)[2]
+    #z=ak
+    #zr=[-0.05,0.2]
+    try:
+        apogeedist=all['diso'][:,index]
+    except:
+        apogeedist=all['d_med']*1000.
 
-    plots.plotc(ax[0,2],all['logg'],(all['diso'][:,index]-dist)/dist,all['logg'],zr=[0,5],xr=[-1,5],yr=[-1,1],xt='log g')
+    fig, ax = plt.subplots(2,3)
+    #fig.subplots_adjust(wspace=0.)
+    plots.plotc(ax[0,0],all['teff'],(apogeedist-dist)/dist,z,zr=zr,xr=[2500,6500],yr=[-1,1],xt='Teff',yt='Fractional distance error')
+    ax[0,0].set_xticks(np.arange(3000,7000,1000))
+
+    plots.plotc(ax[0,1],m_h,(apogeedist-dist)/dist,z,zr=zr,xr=[-3,1],yr=[-1,1],xt='[M/H]')
+    plt.setp(ax[0,1].get_yticklabels(),visible=False)
+    ax[0,1].set_xticks(np.arange(-2.5,1.0,1.0))
+
+    plots.plotc(ax[0,2],all['logg'],(apogeedist-dist)/dist,z,zr=zr,xr=[-1,5],yr=[-1,1],xt='log g')
     plt.setp(ax[0,2].get_yticklabels(),visible=False)
 
-    plots.plotc(ax[1,0],all['h'],(all['diso'][:,index]-dist)/dist,all['logg'],zr=[0,5],yr=[-1,1],xt='H')
+    plots.plotc(ax[1,0],all['h'],(apogeedist-dist)/dist,z,zr=zr,yr=[-1,1],xt='H',yt='Fractional distance error')
 
-    plots.plotc(ax[1,1],all['diso'][:,index],(all['diso'][:,index]-dist)/dist,all['logg'],zr=[0,5],yr=[-1,1],xt='Distance')
-    plt.setp(ax[0,1].get_yticklabels(),visible=False)
-    xmin,xmax= ax[1,1].get_xlim()
-    ax[1,1].set_xticks(np.linspace(xmin,xmax,5)[1:-1])
+    #plots.plotc(ax[1,1],all['diso'][:,index],(all['diso'][:,index]-dist)/dist,m_h,zr=[-2,0.5],yr=[-1,1],xt='Distance')
+    #plt.setp(ax[0,1].get_yticklabels(),visible=False)
+    #xmin,xmax= ax[1,1].get_xlim()
+    #ax[1,1].set_xticks(np.linspace(xmin,xmax,5)[1:-1])
+    ax[1,1].hist((apogeedist-dist)/dist,bins=np.arange(-1.,1,0.05))
+    ax[1,1].set_xlabel('Fractional dist error')
 
     #plots.plotc(ax[1,2],5*np.log10(dist)-5,5*np.log10(all['diso'][:,index])-5,all['logg'],zr=[0,5],xt='m-M')
     #plots.plotc(ax[1,2],5*np.log10(dist)-5,5*np.log10(all['diso'][:,index])-5*np.log10(dist),bestext(all),zr=[0,1],xt='m-M',yr=[-1.5,1.5])
     #ax[1,2].yaxis.tick_right()
-    plots.plotc(ax[1,2],all['teff'],all['logg'],5*np.log10(all['diso'][:,index])-5*np.log10(dist),zr=[-1,1],xt='Teff',xr=[6500,3500],yr=[5,0])
+    plots.plotc(ax[1,2],all['teff'],all['logg'],5*np.log10(apogeedist)-5*np.log10(dist),zr=[-1,1],xt='Teff',xr=[6500,3500],yr=[5,0],yt='log g')
+    ax[1,2].set_xticks(np.arange(3000,7000,1000))
 
     if inter :
         x = 5*np.log10(dist)-5
-        y = 5*np.log10(all['diso'][:,index])-5
+        y = 5*np.log10(apogeedist)-5
         gd, = np.where(np.isfinite(x) & np.isfinite(y))
         plots._data_x = x[gd]
         plots._data_y = y[gd]
         plots._data = all[gd]
         plots.event(fig)
     else :
+        plt.tight_layout()
         plt.savefig(file+'.jpg')
         plt.close()
 

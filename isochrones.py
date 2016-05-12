@@ -13,7 +13,7 @@ from holtz.tools import plots
 os.environ['ISOCHRONE_DIR'] = '/home/holtz/isochrones/'
 
 def isoname(feh) :
-    if feh < 0 :
+    if feh < -1.e-3 :
         file = 'zm{:02d}'.format(int(round(-feh*10)))
     else :
         file = 'zp{:02d}'.format(int(round(feh*10)))
@@ -231,7 +231,16 @@ def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.
     # if isochrones are logarithmically spaced, convert for constant SFR
     iso['intimf'] *= 10**(iso['age']-9)
     if isoadj :
-        iso['teff'] -= iso['feh']*150.
+        a=116.
+        b=155.
+        c=-22.
+        off = a + b*iso['feh'] + c*iso['logg'] 
+        rat = (iso['teff']+off ) / iso['teff']
+        iso['teff'] += off
+        iso['logl'] += np.log10(rat)
+        for filt in ['u','b','v','r','i','j','h','k'] :
+            iso[filt] += -2.5*np.log10(rat)   
+        #iso['teff'] += iso['feh']*150.
 
     # initialize Hess diagram and set bin sizes given limits and nbins
     hess = np.zeros(nbins[::-1],dtype=np.float32)
@@ -367,15 +376,20 @@ def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.
 
     return hdu
 
-def plot(ax,iso,x,y,xr=None,yr=None,color=None,dx=0.,dy=0.) :
+def plot(ax,iso,x,y,xr=None,yr=None,color=None,dx=0.,dy=0.,isoadj=False) :
     ''' plotting routine that handles tip of RGB '''
     mdiff = iso['mini'][0:-1]-iso['mini'][1:]
     j=np.where(abs(mdiff) < 1.e-8)[0]
     if len(j) > 0 :
         if len(j) > 1 :
             j=j[0]
+        if isoadj :
+            a=116.
+            b=155.
+            c=-22.
+            dx = a + b*iso['feh'][0:j] + c*iso['logg'][0:j]
         line = plots.plotl(ax,iso[x][0:j]+dx,iso[y][0:j]+dy,xr=xr,yr=yr,color=color)
-        plots.plotl(ax,iso[x][j+1:]+dx,iso[y][j+1:]+dy,color=line[0].get_color())
+        plots.plotl(ax,iso[x][j+1:],iso[y][j+1:],color=line[0].get_color())
     else :
         line = plots.plotl(ax,iso[x]+dx,iso[y]+dy,xr=xr,yr=yr,color=color)
     plt.draw()
