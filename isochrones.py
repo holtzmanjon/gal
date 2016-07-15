@@ -9,6 +9,9 @@ import astropy
 import math
 import matplotlib.pyplot as plt
 from holtz.tools import plots
+from astropy.modeling import models, fitting
+
+
 
 os.environ['ISOCHRONE_DIR'] = '/home/holtz/isochrones/'
 
@@ -175,7 +178,6 @@ def read(infile,columns=None,agerange=[0,20.]) :
     Returns: 
         structured array with isochrone data
     """
-
     if os.getenv('ISOCHRONE_DIR') != "" :
         data=ascii.read(os.getenv('ISOCHRONE_DIR')+'/'+infile,
              names=['z','age','mini','mact','logl','logte','logg',
@@ -204,6 +206,18 @@ def read(infile,columns=None,agerange=[0,20.]) :
         data.keep_columns(columns)
 
     return data
+
+def bc(t,feh=0.,filt='h',giants=True,degree=2,agerange=None) :
+    iso = read(isoname(feh)+'.dat',agerange=agerange)
+    fit=fitting.LinearLSQFitter()
+    mod=models.Polynomial1D(degree=degree)
+    if giants :
+        gd = np.where((iso['logg'] < 3.5) & (iso['logte'] < 4))[0]
+    else :
+        gd = np.where((iso['logg'] > 4) )[0]
+    p=fit(mod,iso['logte'][gd],iso['mbol'][gd]-iso[filt][gd])
+    return p(np.log10(t))
+
 
 def radius(logl,logte) :
     """ 

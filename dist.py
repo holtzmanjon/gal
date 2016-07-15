@@ -770,7 +770,17 @@ def split(write=True,run=True,n=15) :
             log = open(file+'.log','w')
             subprocess.Popen(["python","/home/holtz/python/holtz/gal/dist.py",file],stdout=log,stderr=subprocess.STDOUT)
 
-def testcat(disp=None,plot=False,bpg=False,ms=False,msbayes=False,index=0) :
+def testall() :
+    testcat(plot=True)
+    testcat(plot=True,index=1)
+    testcat(plot=True,index=2)
+    testcat(plot=True,bpg=True)
+    testcat(plot=True,ms=True)
+    testcat(plot=True,msbayes=True)
+    testcat(plot=True,wang=True)
+    testcat(plot=True,cannon=True)
+
+def testcat(disp=None,plot=True,bpg=False,ms=False,msbayes=False,wang=False,cannon=False,ness=False,dr12=False,index=0) :
     """ 
     Compare distances with catalog distances 
   
@@ -798,6 +808,25 @@ def testcat(disp=None,plot=False,bpg=False,ms=False,msbayes=False,index=0) :
         msall=ascii.read('MS_Bayesian_DR13-Dist-Cat_simple.csv')
         all=fits.open('allStar+.fits')[1].data
         prefix='msbayes'
+    elif wang :
+        msall=ascii.read('wang.dat')
+        all=fits.open('allStar+.fits')[1].data
+        prefix='wang'
+    elif cannon :
+        msall=ascii.read('cannon-distances.csv')
+        all=fits.open('allStar+.fits')[1].data
+        prefix='cannon'
+    elif ness :
+        msall=ascii.read('ids_distances.txt')
+        l=np.core.defchararray.split(msall['ids'],'.')
+        for i in range(len(l)) :
+            ll=l[i]
+            msall['ids'][i]=ll[-1]
+        all=fits.open('allStar+.fits')[1].data
+        prefix='ness'
+    elif dr12 :
+        all=fits.open('allStar+-dr12.fits')[1].data
+        prefix='dr12_diso{:1d}'.format(index)
     else :
         all=fits.open('allStar+.fits')[1].data
         prefix='diso{:1d}'.format(index)
@@ -805,14 +834,26 @@ def testcat(disp=None,plot=False,bpg=False,ms=False,msbayes=False,index=0) :
     # match objects
     h=htm.HTM()
     maxrad=1./3600.
-    if ms or msbayes:
+    if ms or msbayes or wang or cannon or ness:
         # replace distances in all with MS distances
+        all['diso'][:,0] = -1
         if ms :
             m1ms,m2ms=match.match(msall['MS_Isochrone-Match_DR13 ID_2MASS'],all['APOGEE_ID'])
-        else :
+            all['diso'][m2ms,0] = msall['dist_kpc'][m1ms]*1000.
+        elif msbayes :
             m1ms,m2ms=match.match(msall['MS_Bayesian_DR13 ID_2MASS'],all['APOGEE_ID'])
-        all['diso'][:,0] = -1
-        all['diso'][m2ms,0] = msall['dist_kpc'][m1ms]*1000.
+            all['diso'][m2ms,0] = msall['dist_kpc'][m1ms]*1000.
+        elif wang :
+            m1ms,m2ms=match.match(msall['col1'],all['APOGEE_ID'])
+            all['diso'][m2ms,0] = msall['col4'][m1ms]*1000.
+            all['ak_targ'][m2ms] = msall['col8'][m1ms]
+        elif cannon :
+            m1ms,m2ms=match.match(msall['APOGEE_ID'],all['APOGEE_ID'])
+            all['diso'][m2ms,0] = msall['DIST_Padova'][m1ms]*1000.
+        elif ness :
+            m1ms,m2ms=match.match(msall['ids'],all['APOGEE_ID'])
+            all['diso'][m2ms,0] = msall['distance'][m1ms]*1000.
+            pdb.set_trace()
     m1,m2,rad=h.match(all['RA'],all['DEC'],cat['RA'],cat['DEC'],maxrad)
     m1rc,m2rc,rad=h.match(all['RA'],all['DEC'],rc['RA'],rc['DEC'],maxrad)
 
@@ -829,18 +870,26 @@ def testcat(disp=None,plot=False,bpg=False,ms=False,msbayes=False,index=0) :
 
     # make various catalog comparison plots
     if plot :
-        plotcat(prefix+'_apokasc',all[m1],1000.*cat['APOKASC_DIST_BAYES'][m2],index=index)
-        plotcat(prefix+'_hip',all[m1],1000./(cat['HIP_PLX'][m2]),index=index)
-        plotcat(prefix+'_rc',all[m1rc],1000.*rc['RC_DIST'][m2rc],index=index)
-        plotcat(prefix+'_clust',all[mc],dc,index=index)
+        f=open(prefix+'.txt','w')
+        f.write(prefix)
+        n,m,s=plotcat(prefix+'_hip',all[m1],1000./(cat['HIP_PLX'][m2]),index=index)
+        f.write('{:6d}{:6.2f}{:6.2f}'.format(n,m,s))
+        n,m,s=plotcat(prefix+'_clust',all[mc],dc,index=index)
+        f.write('{:6d}{:6.2f}{:6.2f}'.format(n,m,s))
         j=apselect.select(all,field='BAADEWIN_001-04')
-        plotcat(prefix+'_bw',all[j],all[j]['RA']*0+8500.)
+        n,m,s = plotcat(prefix+'_apokasc',all[m1],1000.*cat['APOKASC_DIST_BAYES'][m2],index=index)
+        f.write('{:6d}{:6.2f}{:6.2f}'.format(n,m,s))
+        n,m,s=plotcat(prefix+'_rc',all[m1rc],1000.*rc['RC_DIST'][m2rc],index=index)
+        f.write('{:6d}{:6.2f}{:6.2f}'.format(n,m,s))
+        n,m,s=plotcat(prefix+'_bw',all[j],all[j]['RA']*0+8500.,index=index)
+        f.write('{:6d}{:6.2f}{:6.2f}\n'.format(n,m,s))
+        f.close()
 
-    pdb.set_trace()
-    fig=plt.figure()
-    ax=fig.add_subplot(211)
-    ax2=fig.add_subplot(212)
-    for i in range(len(m1)) :
+    else :
+     fig=plt.figure()
+     ax=fig.add_subplot(211)
+     ax2=fig.add_subplot(212)
+     for i in range(len(m1)) :
       if np.isfinite(cat['HIP_PLX'][m2[i]]) :
         print all[m1[i]]['apogee_id']
         print all[m1[i]]['aspcapflags']
@@ -946,9 +995,13 @@ def plotcat(file,all,dist,index=2,inter=False):
     #plt.setp(ax[0,1].get_yticklabels(),visible=False)
     #xmin,xmax= ax[1,1].get_xlim()
     #ax[1,1].set_xticks(np.linspace(xmin,xmax,5)[1:-1])
-    ax[1,1].hist((apogeedist-dist)/dist,bins=np.arange(-1.,1,0.05))
+    ax[1,1].hist((apogeedist-dist)/dist,bins=np.arange(-1.,1,0.05),range=[-1.,1.])
     ax[1,1].set_xlabel('Fractional dist error')
-
+    frac=(apogeedist-dist)/dist
+    gd=np.where((frac>-1) & (frac<1) )[0]
+    ymin,ymax=ax[1,1].get_ylim()
+    ax[1,1].text(-0.9,ymax-0.05*(ymax-ymin),'{:3d}{:5.2f}{:5.2f}'.format(len(gd),frac[gd].mean(),frac[gd].std()))
+   
     #plots.plotc(ax[1,2],5*np.log10(dist)-5,5*np.log10(all['diso'][:,index])-5,all['logg'],zr=[0,5],xt='m-M')
     #plots.plotc(ax[1,2],5*np.log10(dist)-5,5*np.log10(all['diso'][:,index])-5*np.log10(dist),bestext(all),zr=[0,1],xt='m-M',yr=[-1.5,1.5])
     #ax[1,2].yaxis.tick_right()
@@ -967,6 +1020,9 @@ def plotcat(file,all,dist,index=2,inter=False):
         plt.tight_layout()
         plt.savefig(file+'.jpg')
         plt.close()
+    #f=open(file+'.txt','w')
+    #f.write('{:3d}{:5.2f}{:5.2f}'.format(len(gd),frac[gd].mean(),frac[gd].std()))
+    return len(gd), frac[gd].mean(),frac[gd].std()
 
 def median_index(x,p) :
     """ 
