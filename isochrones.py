@@ -12,8 +12,10 @@ from holtz.tools import plots
 from astropy.modeling import models, fitting
 
 
-
-os.environ['ISOCHRONE_DIR'] = '/home/holtz/isochrones/'
+try :
+    isodir = os.environ['ISOCHRONE_DIR']
+except :
+    os.environ['ISOCHRONE_DIR'] = '/home/holtz/isochrones/'
 
 def isoname(feh) :
     if feh < -1.e-3 :
