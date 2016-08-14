@@ -107,7 +107,7 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=[0.],glon=None,glat=None,errte=50,er
     """
 
     if len(obsmag) != len(ext) or len(grid)-1 != len(obsmag) :
-        print 'obsmag, ext, and grid lengths must match!'
+        print('obsmag, ext, and grid lengths must match!')
         pdb.set_trace()
 
     # get probability of observed Teff, and limits over which to marginalize
@@ -127,8 +127,8 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=[0.],glon=None,glat=None,errte=50,er
 
     # get probability of age, and limits over which to marginalize
     if verbose: 
-        print obste, obslogg, obsfeh
-        print ifehmin, ifehmax, iloggmin, iloggmax,itmin, itmax
+        print(obste, obslogg, obsfeh)
+        print(ifehmin, ifehmax, iloggmin, iloggmax,itmin, itmax)
     if obsage is not None :
         probage=np.exp(-0.5*(obsage-age)**2/errage**2)
         iagemin=np.max([0,np.floor((obsage-3*errage-age[0])/dage).astype('int')])
@@ -145,12 +145,12 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=[0.],glon=None,glat=None,errte=50,er
         obs=np.zeros([len(grid)-1,len(mh),iagemax-iagemin+1,ifehmax-ifehmin+1,iloggmax-iloggmin+1,itmax-itmin+1])
 
     for it in range(itmin,itmax) :
-        #print 't:', it, itmin,itmax
+        #print('t:', it, itmin,itmax)
         for ig in range(iloggmin,iloggmax) :
-            #print 'g:', ig, iloggmin, iloggmax
+            #print('g:', ig, iloggmin, iloggmax)
             p1 = probte[it]*problogg[ig]
             for ifeh in range(ifehmin,ifehmax) :
-                #print 'fe: ',ifeh, ifehmin, ifehmax
+                #print('fe: ',ifeh, ifehmin, ifehmax)
                 prob = p1*probfeh[ifeh]
                 if obsage is None :
                     for imh in range(len(mh)-1) :
@@ -161,8 +161,8 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=[0.],glon=None,glat=None,errte=50,er
                         p2 = prob*probage[iage]
                         #for imh in range(len(mh)-1) :
                         for igrid in range(len(grid)-1) :
-                            #print iage, iagemin, iagemax, obsage, errage, ifeh,ig,it
-                            #print obs.shape, grid[igrid+1].data.shape
+                            #print(iage, iagemin, iagemax, obsage, errage, ifeh,ig,it)
+                            #print(obs.shape, grid[igrid+1].data.shape)
                             obs[igrid,:,iage-iagemin,ifeh-ifehmin,ig-iloggmin,it-itmin] = grid[igrid+1].data[:,iage,ifeh,ig,it]*p2
                         #for imh in range(len(mh)-1) :
                         #    obs[imh,iage,ifeh,ig,it] = grid.data[imh,iage,ifeh,ig,it]*p2
@@ -195,8 +195,8 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=[0.],glon=None,glat=None,errte=50,er
             diso_pdfmax.append(0.)
 
         if plot is not None :
-            print 'M_H: ', mh[probmh.argmax()],median_index(mh,probmh)[1],(probmh*mh).sum()/probmh.sum()
-            print 'diso: ', diso[igrid]
+            print('M_H: ', mh[probmh.argmax()],median_index(mh,probmh)[1],(probmh*mh).sum()/probmh.sum())
+            print('diso: ', diso[igrid])
             plot.plot(mh,probmh*tot)
             plt.draw()
 
@@ -277,11 +277,11 @@ def getdist(obste,obslogg,obsfeh,obsmag,ext=[0.],glon=None,glat=None,errte=50,er
         it,ig,ife,ia = index(obste,obslogg,obsfeh,obsage)
         if obsage is None:
             disp.tv(grid[1].data[:,ife,:,:].sum(axis=0)*1000.,min=0,max=10.)
-            print mh[grid[1].data[:,ife,ig,it].argmax()]
+            print(mh[grid[1].data[:,ife,ig,it].argmax()])
             oy,ox = np.unravel_index(obs[0,:,:,:,:].sum(axis=0).sum(axis=0).argmax(),obs[0,:,:,:,:].sum(axis=0).sum(axis=0).shape)
         else :
             disp.tv(grid[1].data[:,ia,ife,:,:].sum(axis=0)*1000.,min=0,max=10.)
-            print mh[grid[1].data[:,ia,ife,ig,it].argmax()]
+            print(mh[grid[1].data[:,ia,ife,ig,it].argmax()])
             oy,ox = np.unravel_index(obs[0,:,:,:,:,:].sum(axis=0).sum(axis=0).sum(axis=0).argmax(),obs[0,:,:,:,:,:].sum(axis=0).sum(axis=0).sum(axis=0).shape)
         circ=plt.Circle((it,ig),radius=2,fill=False,color='g')
         disp.ax.add_patch(circ)
@@ -366,9 +366,9 @@ def init(doage=None,isoadj=False,clobber=False,prefix=None) :
 
     Returns:
     """
-    print 'Initilizing grid...'
+    print('Initilizing grid...')
     getgrid(doage=doage,isoadj=isoadj,clobber=clobber,prefix=prefix)
-    print 'Initilizing LFs for priors...'
+    print('Initilizing LFs for priors...')
     lfs()
     dust.setup()
 
@@ -401,7 +401,7 @@ def isotest(errte=50,errlogg=0.1,errfeh=0.05,mlim=12.2,nskip=10,errage=None,dtef
                        ])
         for i in range(len(a)) :
             #if (a['logg'][i] < 4)  & (a['teff'][i] < 5800) & (i%nskip == 0) :
-            print a['teff'][i],a['logg'][i],feh0,a['age'][i]
+            print(a['teff'][i],a['logg'][i],feh0,a['age'][i])
             if (a['teff'][i] < 5800) & (a['h'][i] < 7) & (i%nskip == 0) :
                 # add simulated uncertainties
                 teff = a['teff'][i] + np.random.normal(scale=errte) + dteff
@@ -432,7 +432,7 @@ def isotest(errte=50,errlogg=0.1,errfeh=0.05,mlim=12.2,nskip=10,errage=None,dtef
                 rec['h'] = a['h'][i]
                 rec['dist'] = true
                 rec['diso'] = out.diso[0]
-                print a['age'][i], a['teff'][i], a['logg'][i], feh, true, out.diso[0]
+                print(a['age'][i], a['teff'][i], a['logg'][i], feh, true, out.diso[0])
                 if first :
                     all = rec
                 else :
@@ -575,14 +575,14 @@ def distrec(rec,param='PARAM',disp=None,plot=None,obsage=None,errage=10,verbose=
     # compute distance given parameters within range
     if rec[param][1] > -1  and rec[param][0] < 5800 and rec[param][0] > 3000 and ext[1]  > -0.1 : 
         iso_fe_h = feh_corrected(rec[param][3],rec[param][6])
-        if verbose : print '  ',rec[param][0],rec[param][1],iso_fe_h,rec['H'],ext,rec['GLON'],rec['GLAT']
+        if verbose : print('  ',rec[param][0],rec[param][1],iso_fe_h,rec['H'],ext,rec['GLON'],rec['GLAT'])
         out=getdist(rec[param][0],rec[param][1],iso_fe_h,[rec['H']],glon=rec['GLON'],glat=rec['GLAT'],
                     mlim=mlim, ext=[ext[1]],
                     errte=50, errlogg=0.1, errfeh = 0.05, disp=disp, plot=plot, obsage=obsage, errage=errage)
         return out
     elif rec['FPARAM'][1] > -1  and rec['FPARAM'][0] < 5800 and rec['FPARAM'][0] > 3000 and ext[1]  > -0.1 : 
         iso_fe_h = feh_corrected(rec['FPARAM'][3],rec['FPARAM'][6])
-        print ' using FPARAM: ',rec['FPARAM'][0],rec['FPARAM'][1],iso_fe_h,rec['H'],ext,rec['GLON'],rec['GLAT']
+        print(' using FPARAM: ',rec['FPARAM'][0],rec['FPARAM'][1],iso_fe_h,rec['H'],ext,rec['GLON'],rec['GLAT'])
         if rec['FPARAM'][1] > 4 :
            errlogg =0.75
         else :
@@ -655,7 +655,7 @@ def getmlim(rec) :
     #    mlim=12.8
     #elif (rec['APOGEE_TARGET2'] & 2**13) :
     #    mlim=13.3
-    #print rec['APOGEE_ID'],rec['FIELD'], mlim
+    #print(rec['APOGEE_ID'],rec['FIELD'], mlim)
     #return mlim
     if rec['MAX_H'] > 0 :
         return rec['MAX_H']
@@ -686,7 +686,7 @@ def bestext(rec,verbose=False) :
         # assume no extinction for hipparcos sample
         if rec['FIELD'].strip() == 'hip' :
             ak = 0.
-        if verbose : print '  AK: ', rec['AK_TARG_METHOD'], rec['AK_TARG'], rec['AK_WISE'], ak
+        if verbose : print('  AK: ', rec['AK_TARG_METHOD'], rec['AK_TARG'], rec['AK_WISE'], ak)
     else :
         # array input/output
         ak=rec['AK_WISE']
@@ -730,7 +730,7 @@ def merge(out='allStar+',n=15) :
     """
     for i in range(n) :
         infile = 's{:02d}+'.format(i)
-        print infile
+        print(infile)
         f=fits.open(infile+'.fits')[1].data
         if i == 0 :
             all = f
@@ -762,7 +762,7 @@ def split(write=True,run=True,n=15) :
             # on last one, get all the rest of the stars
             i2=ntot-1
         file = 's{:02d}'.format(i)
-        print file
+        print(file)
         if write :
             out=Table(data[i1:i2])
             out.write(file+'.fits',format='fits',overwrite=True)
@@ -862,7 +862,7 @@ def testcat(disp=None,plot=True,bpg=False,ms=False,msbayes=False,wang=False,cann
     mc=np.array([],dtype=int)
     dc=np.array([])
     for i in range(len(clust.name)) :
-        print clust[i].name,clust[i].dist
+        print(clust[i].name,clust[i].dist)
         j=apselect.clustmember(all,clust[i].name,logg=[-1,5],raw=True)
         if len(j) > 0 :
             mc=np.append(mc,j)
@@ -891,12 +891,12 @@ def testcat(disp=None,plot=True,bpg=False,ms=False,msbayes=False,wang=False,cann
      ax2=fig.add_subplot(212)
      for i in range(len(m1)) :
       if np.isfinite(cat['HIP_PLX'][m2[i]]) :
-        print all[m1[i]]['apogee_id']
-        print all[m1[i]]['aspcapflags']
-        print all[m1[i]]['diso'],1000./cat['HIP_PLX'][m2[i]],5*np.log10(all[m1[i]]['diso'][0]/(1000./cat['HIP_PLX'][m2[i]]))
-        print all[m1[i]]['ak_targ'],all[m1[i]]['ak_wise'],all[m1[i]]['sfd_ebv']*0.302,all[m1[i]]['glat']
-        print all[m1[i]]['param']
-        print 'parallax, m-M, H: ',cat[m2[i]]['hip_plx'],all[m1[i]]['H']-(5*np.log10(1000./cat[m2[i]]['HIP_PLX'])-5),all[m1[i]]['H']
+        print(all[m1[i]]['apogee_id'])
+        print(all[m1[i]]['aspcapflags'])
+        print(all[m1[i]]['diso'],1000./cat['HIP_PLX'][m2[i]],5*np.log10(all[m1[i]]['diso'][0]/(1000./cat['HIP_PLX'][m2[i]])))
+        print(all[m1[i]]['ak_targ'],all[m1[i]]['ak_wise'],all[m1[i]]['sfd_ebv']*0.302,all[m1[i]]['glat'])
+        print(all[m1[i]]['param'])
+        print('parallax, m-M, H: ',cat[m2[i]]['hip_plx'],all[m1[i]]['H']-(5*np.log10(1000./cat[m2[i]]['HIP_PLX'])-5),all[m1[i]]['H'])
         plots.plotl(ax,all[m1[i]]['diso_dist'],all[m1[i]]['diso_pdf'],xr=[0,1000])
         for j in range(3) :
           x=all[m1[i]]['diso'][j]
@@ -922,7 +922,7 @@ def testclust(disp=None,suffix=None) :
     alldata=np.array([])
     allmh=np.array([])
     for i in range(len(clust.name)) :
-        print clust[i].name,clust[i].dist
+        print(clust[i].name,clust[i].dist)
         j=apselect.clustmember(a,clust[i].name)
         hdata=a['DISO'][j,1]/(clust[i].dist*1000)
         alldata=np.append(alldata,hdata)

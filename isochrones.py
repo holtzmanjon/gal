@@ -236,7 +236,7 @@ def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.
     # read the isochrone
     first = True
     for file in files :
-        print file
+        print(file)
         tmp = read(file,agerange=agerange)
         if first :
             iso = tmp
@@ -267,7 +267,7 @@ def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.
     isoages = set(iso['age'])
     tot = 0
     for age in isoages :
-        print 'load age: ', age
+        print('load age: ', age)
         gd = np.where(iso['age'] == age)[0]
         aiso = iso[gd]
         tot += aiso['intimf'][-1]
@@ -291,11 +291,11 @@ def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.
             # number of bins over which stars are spread
             nbin = np.prod(bmax-bmin+1)
             if verbose > 0 :
-                print 'line: ', i, ' nbins: ', nbin, ' nimf: ', nimf, verbose
+                print('line: ', i, ' nbins: ', nbin, ' nimf: ', nimf, verbose)
                 for idim in range(ndim) :
-                    #print aiso[vals[idim]][i], bins[idim,i], xmin[idim], dx[idim],
-                    print aiso[vals[idim]][i], bins[idim,i],
-                print
+                    #print(aiso[vals[idim]][i], bins[idim,i], xmin[idim], dx[idim],)
+                    print(aiso[vals[idim]][i], bins[idim,i],)
+                print()
 
             if nbin > 1 :
                 # interpolate between points if we are covering more than one bin
@@ -323,11 +323,8 @@ def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.
                 nb=aiso['intimf'][i:i+2]
 
             #if verbose>0 :
-                #print 'sum: ', nb[len(nb)-1]-nb[0]
-                #print nb
-
-            # loop over all the pairs of sub-bins
-            #print 'nsubbins: ', len(nb)
+                #print('sum: ', nb[len(nb)-1]-nb[0])
+            #print('nsubbins: ', len(nb))
             ntot = 0.
             for j in range(len(nb)-1):
                 # get min and max bin numbers
@@ -338,9 +335,9 @@ def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.
                 nbin = np.prod(bmax-bmin+1)
                 nimf = nb[j+1]-nb[j]
 
-                #print 'subbin: ', j, ' nbins: ', nbin, ' nimf: ', nimf
-                #print bmin
-                #print bmax
+                #print('subbin: ', j, ' nbins: ', nbin, ' nimf: ', nimf)
+                #print(bmin)
+                #print(bmax)
                 #pdb.set_trace()
 
                 # make sure that data doesn't fall entirely outside output array in any dimension
@@ -348,8 +345,8 @@ def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.
                     # don't let array go outside of bounds
                     bmin=np.max([bmin,np.zeros(ndim)+0],axis=0)
                     bmax=np.min([bmax,np.array(nbins)-1],axis=0)
-                    #print bmin
-                    #print bmax
+                    #print(bmin)
+                    #print(bmax)
                     # add the stars in!
                     if ndim == 1 :
                         hess[bmin[0]:bmax[0]+1] += nimf / nbin
@@ -364,7 +361,7 @@ def mkhess(agerange=[0.,20.], files=['zp00.dat'], vals=['logte','logl'],xmin=[3.
                     ntot += nimf
 
             #if verbose > 0 :
-            #    print 'added: ', ntot
+            #    print('added: ', ntot)
     if norm :
        hess /= tot
  
