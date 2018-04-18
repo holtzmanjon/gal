@@ -605,7 +605,10 @@ def main(file=None,nmax=None,raw=False) :
     Returns:
     """
     # read input structure
+    print(file)
     if file is None :
+        apload.dr14()
+        apload.results='l31c.2'
         a=apload.allStar()[1].data    
         file='allStar'
     else :
@@ -617,7 +620,10 @@ def main(file=None,nmax=None,raw=False) :
     # initialize and do dummy run to get output recarray to append to structure
     init(isoadj=True,prefix='bigadj')
     out=getdist(4500.,2.5,0.,[10.])
-    data=struct.add_cols(a,out)
+    data=Table(a)
+    tout=Table(out)
+    for column in tout.columns :
+      data[column]=out[column]*0.
 
     if raw :
         param = 'FPARAM'
@@ -739,7 +745,7 @@ def merge(out='allStar+',n=15) :
     tab=Table(all)
     tab.write(out+'.fits',format='fits',overwrite=True)
 
-def split(write=True,run=True,n=15) :
+def split(file=None,write=True,run=True,n=15) :
     """ 
     Split allStar file into muliple pieces, and run each in parallel 
   
@@ -749,10 +755,14 @@ def split(write=True,run=True,n=15) :
 
     Returns:
     """
-    apload.dr13()
-    #apload.aspcap='l30g'
-    #apload.results='l30g'
-    data=apload.allStar()[1].data    
+    if file is None :
+        apload.dr14()
+        apload.results='l31c.2'
+        data=apload.allStar()[1].data
+        file='allStar'
+    else :
+        data=fits.open(file+'.fits')[1].data
+
     ntot=len(data)
     for i in range(n) :
         i1=i*ntot/n
@@ -768,19 +778,23 @@ def split(write=True,run=True,n=15) :
             out.write(file+'.fits',format='fits',overwrite=True)
         if run :
             log = open(file+'.log','w')
+            print('running',file)
             subprocess.Popen(["python","/home/holtz/python/holtz/gal/dist.py",file],stdout=log,stderr=subprocess.STDOUT)
 
 def testall() :
-    testcat(plot=True)
-    testcat(plot=True,index=1)
-    testcat(plot=True,index=2)
+    testcat(plot=True,dr14=True)
+    testcat(plot=True,index=1,dr14=True)
+    testcat(plot=True,index=2,dr14=True)
+    testcat(plot=True,index=1,prior=True,dr14=True)
     testcat(plot=True,bpg=True)
-    testcat(plot=True,ms=True)
-    testcat(plot=True,msbayes=True)
-    testcat(plot=True,wang=True)
-    testcat(plot=True,cannon=True)
+    testcat(plot=True,naoc=True)
+    testcat(plot=True,nice=True)
+    #testcat(plot=True,ms=True)
+    #testcat(plot=True,msbayes=True)
+    #testcat(plot=True,wang=True)
+    #testcat(plot=True,cannon=True)
 
-def testcat(disp=None,plot=True,bpg=False,ms=False,msbayes=False,wang=False,cannon=False,ness=False,dr12=False,index=0) :
+def testcat(disp=None,plot=True,bpg=False,ms=False,msbayes=False,wang=False,cannon=False,ness=False,dr12=False,index=0,naoc=False,nice=False,dr14=False,prior=False) :
     """ 
     Compare distances with catalog distances 
   
@@ -791,14 +805,21 @@ def testcat(disp=None,plot=True,bpg=False,ms=False,msbayes=False,wang=False,cann
     Returns:
     """
 
+    if prior : 
+        diso = 'diso_gal'
+    else :
+        diso = 'diso'
     from esutil import htm
     # read catalog
     rc=fits.open('apogee-rc-DR13.fits')[1].data
     cat=fits.open('apogee-distances_DR12_v1.3.fits')
     cat.verify('fix')
     cat=cat[1].data
+    vac=fits.open('apogee-DVAC-DR14.2.fits')[1].data
+    all=fits.open('allStar+-l31c.2.fits')[1].data
     if bpg :
-        all=fits.open('apogee-BPGdistances_DR13_v2.0.fits')[1].data
+        #all=fits.open('apogee-BPGdistances_DR13_v2.0.fits')[1].data
+        tag='BPG_dist50'
         prefix='bpg'
     elif ms :
         msall=ascii.read('MS_Isochrone-Match_DR13-Dist-Cat_simple.csv')
@@ -811,7 +832,12 @@ def testcat(disp=None,plot=True,bpg=False,ms=False,msbayes=False,wang=False,cann
     elif wang :
         msall=ascii.read('wang.dat')
         all=fits.open('allStar+.fits')[1].data
-        prefix='wang'
+    elif naoc :
+        tag='NAOC_dist'
+        prefix='naoc'
+    elif nice :
+        tag='nice_dist'
+        prefix='nice'
     elif cannon :
         msall=ascii.read('cannon-distances.csv')
         all=fits.open('allStar+.fits')[1].data
@@ -826,34 +852,42 @@ def testcat(disp=None,plot=True,bpg=False,ms=False,msbayes=False,wang=False,cann
         prefix='ness'
     elif dr12 :
         all=fits.open('allStar+-dr12.fits')[1].data
-        prefix='dr12_diso{:1d}'.format(index)
+        prefix='dr12_'+diso+'{:1d}'.format(index)
+    elif dr14 :
+        all=fits.open('allStar+-l31c.2.fits')[1].data
+        prefix='nmsu_'+diso+'{:1d}'.format(index)
     else :
-        all=fits.open('allStar+.fits')[1].data
-        prefix='diso{:1d}'.format(index)
+        all=fits.open('allStar+-l31c.2.fits')[1].data
+        prefix=diso+'{:1d}'.format(index)
 
     # match objects
     h=htm.HTM()
     maxrad=1./3600.
-    if ms or msbayes or wang or cannon or ness:
-        # replace distances in all with MS distances
-        all['diso'][:,0] = -1
-        if ms :
-            m1ms,m2ms=match.match(msall['MS_Isochrone-Match_DR13 ID_2MASS'],all['APOGEE_ID'])
-            all['diso'][m2ms,0] = msall['dist_kpc'][m1ms]*1000.
-        elif msbayes :
-            m1ms,m2ms=match.match(msall['MS_Bayesian_DR13 ID_2MASS'],all['APOGEE_ID'])
-            all['diso'][m2ms,0] = msall['dist_kpc'][m1ms]*1000.
-        elif wang :
-            m1ms,m2ms=match.match(msall['col1'],all['APOGEE_ID'])
-            all['diso'][m2ms,0] = msall['col4'][m1ms]*1000.
-            all['ak_targ'][m2ms] = msall['col8'][m1ms]
-        elif cannon :
-            m1ms,m2ms=match.match(msall['APOGEE_ID'],all['APOGEE_ID'])
-            all['diso'][m2ms,0] = msall['DIST_Padova'][m1ms]*1000.
-        elif ness :
-            m1ms,m2ms=match.match(msall['ids'],all['APOGEE_ID'])
-            all['diso'][m2ms,0] = msall['distance'][m1ms]*1000.
-            pdb.set_trace()
+    m1,m2=match.match(all['ASPCAP_ID'].strip(),vac['ASPACP_ID'].strip())
+    if naoc or bpg :
+        all[diso][:,0] = -1
+        all[diso][m1,0] = vac[m2][tag]*1000.
+
+    #if ms or msbayes or wang or cannon or ness:
+    #    # replace distances in all with MS distances
+    #    all[diso][:,0] = -1
+    #    if ms :
+    #        m1ms,m2ms=match.match(msall['MS_Isochrone-Match_DR13 ID_2MASS'],all['APOGEE_ID'])
+    #        all[diso][m2ms,0] = msall['dist_kpc'][m1ms]*1000.
+    #    elif msbayes :
+    #        m1ms,m2ms=match.match(msall['MS_Bayesian_DR13 ID_2MASS'],all['APOGEE_ID'])
+    #        all[diso][m2ms,0] = msall['dist_kpc'][m1ms]*1000.
+    #    elif wang :
+    #        m1ms,m2ms=match.match(msall['col1'],all['APOGEE_ID'])
+    #        all[diso][m2ms,0] = msall['col4'][m1ms]*1000.
+    #        all['ak_targ'][m2ms] = msall['col8'][m1ms]
+    #    elif cannon :
+    #        m1ms,m2ms=match.match(msall['APOGEE_ID'],all['APOGEE_ID'])
+    #        all[diso][m2ms,0] = msall['DIST_Padova'][m1ms]*1000.
+    #    elif ness :
+    #        m1ms,m2ms=match.match(msall['ids'],all['APOGEE_ID'])
+    #        all[diso][m2ms,0] = msall['distance'][m1ms]*1000.
+    #        pdb.set_trace()
     m1,m2,rad=h.match(all['RA'],all['DEC'],cat['RA'],cat['DEC'],maxrad)
     m1rc,m2rc,rad=h.match(all['RA'],all['DEC'],rc['RA'],rc['DEC'],maxrad)
 
@@ -872,16 +906,16 @@ def testcat(disp=None,plot=True,bpg=False,ms=False,msbayes=False,wang=False,cann
     if plot :
         f=open(prefix+'.txt','w')
         f.write(prefix)
-        n,m,s=plotcat(prefix+'_hip',all[m1],1000./(cat['HIP_PLX'][m2]),index=index)
+        n,m,s=plotcat(prefix+'_hip',all[m1],1000./(cat['HIP_PLX'][m2]),index=index,prior=prior)
         f.write('{:6d}{:6.2f}{:6.2f}'.format(n,m,s))
-        n,m,s=plotcat(prefix+'_clust',all[mc],dc,index=index)
+        n,m,s=plotcat(prefix+'_clust',all[mc],dc,index=index,prior=prior)
         f.write('{:6d}{:6.2f}{:6.2f}'.format(n,m,s))
         j=apselect.select(all,field='BAADEWIN_001-04')
-        n,m,s = plotcat(prefix+'_apokasc',all[m1],1000.*cat['APOKASC_DIST_BAYES'][m2],index=index)
+        n,m,s = plotcat(prefix+'_apokasc',all[m1],1000.*cat['APOKASC_DIST_BAYES'][m2],index=index,prior=prior)
         f.write('{:6d}{:6.2f}{:6.2f}'.format(n,m,s))
-        n,m,s=plotcat(prefix+'_rc',all[m1rc],1000.*rc['RC_DIST'][m2rc],index=index)
+        n,m,s=plotcat(prefix+'_rc',all[m1rc],1000.*rc['RC_DIST'][m2rc],index=index,prior=prior)
         f.write('{:6d}{:6.2f}{:6.2f}'.format(n,m,s))
-        n,m,s=plotcat(prefix+'_bw',all[j],all[j]['RA']*0+8500.,index=index)
+        n,m,s=plotcat(prefix+'_bw',all[j],all[j]['RA']*0+8500.,index=index,prior=prior)
         f.write('{:6d}{:6.2f}{:6.2f}\n'.format(n,m,s))
         f.close()
 
@@ -893,17 +927,17 @@ def testcat(disp=None,plot=True,bpg=False,ms=False,msbayes=False,wang=False,cann
       if np.isfinite(cat['HIP_PLX'][m2[i]]) :
         print(all[m1[i]]['apogee_id'])
         print(all[m1[i]]['aspcapflags'])
-        print(all[m1[i]]['diso'],1000./cat['HIP_PLX'][m2[i]],5*np.log10(all[m1[i]]['diso'][0]/(1000./cat['HIP_PLX'][m2[i]])))
+        print(all[m1[i]][diso],1000./cat['HIP_PLX'][m2[i]],5*np.log10(all[m1[i]][diso][0]/(1000./cat['HIP_PLX'][m2[i]])))
         print(all[m1[i]]['ak_targ'],all[m1[i]]['ak_wise'],all[m1[i]]['sfd_ebv']*0.302,all[m1[i]]['glat'])
         print(all[m1[i]]['param'])
         print('parallax, m-M, H: ',cat[m2[i]]['hip_plx'],all[m1[i]]['H']-(5*np.log10(1000./cat[m2[i]]['HIP_PLX'])-5),all[m1[i]]['H'])
         plots.plotl(ax,all[m1[i]]['diso_dist'],all[m1[i]]['diso_pdf'],xr=[0,1000])
         for j in range(3) :
-          x=all[m1[i]]['diso'][j]
+          x=all[m1[i]][diso][j]
           ax.plot([x,x],[0,1])
         x=1000./cat['HIP_PLX'][m2[i]]
         ax.plot([x,x],[0,1],color='k')
-        if abs(5*np.log10(all[m1[i]]['diso'][0]/(1000./cat['HIP_PLX'][m2[i]]))) > 0.0 :
+        if abs(5*np.log10(all[m1[i]][diso][0]/(1000./cat['HIP_PLX'][m2[i]]))) > 0.0 :
           if disp is not None :
             out=distrec(all[m1[i]],plot=ax2,disp=disp)
         plt.figure(fig.number)
@@ -953,7 +987,7 @@ def testclust(disp=None,suffix=None) :
     plt.savefig('dist_all'+suffix+'.jpg')
        
     
-def plotcat(file,all,dist,index=2,inter=False):
+def plotcat(file,all,dist,index=2,inter=False,prior=False):
     """ 
     Plots for catalog comparisons 
   
@@ -972,8 +1006,12 @@ def plotcat(file,all,dist,index=2,inter=False):
     #ak=bestext(all)[2]
     #z=ak
     #zr=[-0.05,0.2]
+    if prior :
+        diso = 'diso_gal'
+    else :
+        diso = 'diso'
     try:
-        apogeedist=all['diso'][:,index]
+        apogeedist=all[diso][:,index]
     except:
         apogeedist=all['d_med']*1000.
 
